@@ -139,21 +139,56 @@ void App::initialise(const String& commandLineParameters) {
         // Under Wine a plugin load that hangs never recovers (the loader lock stays held), so the sandbox also ends
         // itself when a load takes too long. The client then reconnects and gets a fresh sandbox, and no hung
         // instance is left behind after the client gave up.
+        // The hang starts with the main thread (where plugins are loaded) running out of stack, so watch how much of
+        // it is committed and end the sandbox right away when it is nearly used up. Wine moves StackLimit down as the
+        // stack grows. No plugin needs megabytes of stack, so this does not hit loads that are just slow.
 #ifdef JUCE_WINDOWS
         bool killHungLoads = isRunningUnderWine();
+        auto* mainTib = reinterpret_cast<NT_TIB*>(NtCurrentTeb());
+        char* stackBottom = nullptr;
+        {
+            MEMORY_BASIC_INFORMATION mbi = {};
+            if (VirtualQuery(mainTib->StackLimit, &mbi, sizeof(mbi)) == sizeof(mbi)) {
+                stackBottom = static_cast<char*>(mbi.AllocationBase);
+            }
+        }
+        if (stackBottom != nullptr && static_cast<char*>(mainTib->StackLimit) - stackBottom <
+                                          (static_cast<char*>(mainTib->StackBase) - stackBottom) / 8) {
+            // the stack is committed upfront, so its usage can't be told from StackLimit
+            stackBottom = nullptr;
+        }
+        auto mainStackNearlyUsedUp = [mainTib, stackBottom] {
+            if (stackBottom == nullptr) {
+                return false;
+            }
+            auto* limit = static_cast<char*>(reinterpret_cast<volatile NT_TIB*>(mainTib)->StackLimit);
+            auto size = static_cast<char*>(mainTib->StackBase) - stackBottom;
+            return limit - stackBottom < size / 8;
+        };
 #else
         bool killHungLoads = false;
+        auto mainStackNearlyUsedUp = [] { return false; };
 #endif
-        std::thread([this, killHungLoads] {
+        std::thread([this, killHungLoads, mainStackNearlyUsedUp] {
             while (!m_preparingShutdown) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
                 auto started = pluginLoadStartedMs.load();
-                if (killHungLoads && started > 0 && Time::currentTimeMillis() - started > 12000) {
-                    break;
+                if (killHungLoads && started > 0) {
+                    if (mainStackNearlyUsedUp()) {
+                        logln("main thread ran out of stack while loading a plugin, terminating the sandbox");
+                        break;
+                    }
+                    if (Time::currentTimeMillis() - started > 12000) {
+                        logln("loading a plugin takes too long, terminating the sandbox");
+                        break;
+                    }
                 }
             }
             if (m_preparingShutdown) {
                 std::this_thread::sleep_for(std::chrono::seconds(15));
+            } else {
+                // give the logger a moment to write the message
+                std::this_thread::sleep_for(std::chrono::milliseconds(300));
             }
 #ifdef JUCE_WINDOWS
             // ExitProcess would run DLL detach handlers under the loader lock, which can hang as well
