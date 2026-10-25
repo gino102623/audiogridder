@@ -29,9 +29,28 @@ String getLastErrorStr() {
 #endif
 }
 
+bool isRunningUnderWine() {
+#ifdef JUCE_WINDOWS
+    static const bool underWine = [] {
+        if (auto* ntdll = GetModuleHandleW(L"ntdll.dll")) {
+            return GetProcAddress(ntdll, "wine_get_version") != nullptr;
+        }
+        return false;
+    }();
+    return underWine;
+#else
+    return false;
+#endif
+}
+
 void windowToFront(Component* c) {
     setLogTagStatic("utils");
     traceScope();
+    if (nullptr != c && isRunningUnderWine()) {
+        // Raise the window among the Wine windows without activating the Wine app, otherwise the DAW loses focus
+        c->toFront(false);
+        return;
+    }
     if (nullptr != c && !c->isAlwaysOnTop()) {
 #ifndef JUCE_LINUX
         c->setAlwaysOnTop(true);

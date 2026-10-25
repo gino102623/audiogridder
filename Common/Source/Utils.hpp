@@ -487,6 +487,9 @@ inline String jsonGetValue(const json& cfg, const String& name, const String& de
 
 void windowToFront(juce::Component* c);
 
+// True when the process runs under Wine (e.g. the Windows server on macOS)
+bool isRunningUnderWine();
+
 inline void cleanDirectory(const String& path, const String& filePrefix, const String& fileExtension,
                            int filesToKeep = 5) {
     setLogTagStatic("utils");

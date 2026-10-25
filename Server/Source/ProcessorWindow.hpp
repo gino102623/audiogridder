@@ -38,6 +38,7 @@ class ProcessorWindow : public DocumentWindow, private Timer, public LogTag {
     void stopCapturing();
     void resized() override;
     void setVisible(bool b) override;
+    void visibilityChanged() override;
     bool isShowingPlugin() const { return m_isShowing; }
     bool hasEditor() const { return nullptr != m_editor; }
     void move(int x, int y);

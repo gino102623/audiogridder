@@ -82,6 +82,15 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   target_compile_definitions(AudioGridderServer PRIVATE JUCE_LINUX=1)
 endif()
 
+# Plugins can need more than the default 1MB thread stack while loading (stack overflows seen under Wine)
+if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+  if(MSVC)
+    target_link_options(AudioGridderServer PRIVATE /STACK:8388608)
+  else()
+    target_link_options(AudioGridderServer PRIVATE -Wl,--stack,8388608)
+  endif()
+endif()
+
 ag_strip(AudioGridderServer Server)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")

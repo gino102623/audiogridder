@@ -8,6 +8,11 @@
 #include "MenuBarWindow.hpp"
 #include "App.hpp"
 #include "Images.hpp"
+#include "Utils.hpp"
+
+#ifdef JUCE_WINDOWS
+#include <windows.h>
+#endif
 
 namespace e47 {
 
@@ -55,6 +60,14 @@ MenuBarWindow::~MenuBarWindow() {
 }
 
 void MenuBarWindow::mouseUp(const MouseEvent& /* event */) {
+#ifdef JUCE_WINDOWS
+    if (isRunningUnderWine()) {
+        // A tray click does not activate the Wine app, and JUCE closes popup menus of background processes
+        if (auto* peer = SystemTrayIconComponent::getPeer()) {
+            SetForegroundWindow((HWND)peer->getNativeHandle());
+        }
+    }
+#endif
     auto menu = m_app->getMenuForIndex(0, "Tray");
     menu.addSeparator();
     menu.addItem("About AudioGridder", [this] {

@@ -221,6 +221,17 @@ void ProcessorWindow::setVisible(bool b) {
     m_isShowing = b;
 }
 
+void ProcessorWindow::visibilityChanged() {
+    if (isRunningUnderWine()) {
+        // TopLevelWindow would call toFront(true) and steal the focus from the DAW
+        if (isShowing()) {
+            toFront(false);
+        }
+        return;
+    }
+    DocumentWindow::visibilityChanged();
+}
+
 void ProcessorWindow::move(int x, int y) {
     setBounds(x, y, getWidth(), getHeight());
     if (m_processor->isClient()) {

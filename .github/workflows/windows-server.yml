@@ -1,0 +1,36 @@
+name: Windows server build
+
+on:
+  push:
+    branches: [wine-friendly-server]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Fetch prebuilt dependencies
+        shell: bash
+        run: git clone --depth 1 https://github.com/apohl79/audiogridder-deps.git
+
+      - name: Configure
+        shell: bash
+        run: >
+          cmake -B build -A x64
+          -DAG_DEPS_ROOT="$GITHUB_WORKSPACE/audiogridder-deps/windows-x86_64"
+          -DAG_WITH_PLUGIN=OFF
+          -DAG_ENABLE_CODE_SIGNING=OFF
+
+      - name: Build server
+        shell: bash
+        run: cmake --build build --config RelWithDebInfo --target AudioGridderServer --parallel
+
+      - name: Upload server binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: AudioGridderServer-windows-x64
+          path: build/**/AudioGridderServer.exe
