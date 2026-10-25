@@ -26,6 +26,10 @@ class MenuBarWindow;
 
 class App : public JUCEApplication, public MenuBarModel, public LogTag {
   public:
+    // Time (ms since epoch) a plugin instance creation started on the message thread, 0 if none is running. Used by
+    // the sandbox watchdog to detect plugin loads that hang.
+    static std::atomic<int64> pluginLoadStartedMs;
+
     enum ExitCodes : uint32 {
         EXIT_OK = 0,
         EXIT_RESTART = 1,

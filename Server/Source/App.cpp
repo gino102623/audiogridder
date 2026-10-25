@@ -26,6 +26,9 @@
 
 namespace e47 {
 
+std::atomic<int64> App::pluginLoadStartedMs{0};
+
+
 namespace {
 // Under Wine on macOS the server can't be asked to quit by the usual means, and killing it leaves its icon stuck in
 // the macOS menu bar. Creating this file in the Windows temp folder makes the server shut down cleanly instead.
@@ -133,11 +136,25 @@ void App::initialise(const String& commandLineParameters) {
         // up in an endless exception loop while holding the loader lock). The sandbox would then never exit and keep
         // the plugin loaded. A sandbox has no state worth saving, so force the exit if shutting down stalls. The
         // watchdog thread is created upfront, as creating a thread needs the loader lock that might be held then.
-        std::thread([this] {
+        // Under Wine a plugin load that hangs never recovers (the loader lock stays held), so the sandbox also ends
+        // itself when a load takes too long. The client then reconnects and gets a fresh sandbox, and no hung
+        // instance is left behind after the client gave up.
+#ifdef JUCE_WINDOWS
+        bool killHungLoads = isRunningUnderWine();
+#else
+        bool killHungLoads = false;
+#endif
+        std::thread([this, killHungLoads] {
             while (!m_preparingShutdown) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                auto started = pluginLoadStartedMs.load();
+                if (killHungLoads && started > 0 && Time::currentTimeMillis() - started > 12000) {
+                    break;
+                }
             }
-            std::this_thread::sleep_for(std::chrono::seconds(15));
+            if (m_preparingShutdown) {
+                std::this_thread::sleep_for(std::chrono::seconds(15));
+            }
 #ifdef JUCE_WINDOWS
             // ExitProcess would run DLL detach handlers under the loader lock, which can hang as well
             TerminateProcess(GetCurrentProcess(), 1);

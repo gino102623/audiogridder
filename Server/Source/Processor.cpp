@@ -317,9 +317,15 @@ std::shared_ptr<AudioPluginInstance> Processor::loadPlugin(const PluginDescripti
     std::shared_ptr<AudioPluginInstance> inst;
     runOnMsgThreadSync([&] {
         traceScope();
+#ifndef AG_UNIT_TESTS
+        App::pluginLoadStartedMs = Time::currentTimeMillis();
+#endif
         inst = std::shared_ptr<AudioPluginInstance>(
             plugmgr.createPluginInstance(plugdesc, sampleRate, blockSize, err2).release(),
             [](AudioPluginInstance* p) { MessageManager::callAsync([p] { delete p; }); });
+#ifndef AG_UNIT_TESTS
+        App::pluginLoadStartedMs = 0;
+#endif
     });
     if (nullptr == inst) {
         err = "failed loading plugin ";
