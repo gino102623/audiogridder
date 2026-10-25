@@ -154,9 +154,29 @@ void App::initialise(const String& commandLineParameters) {
         // registers and then writes just past the top of the stack. On Wine this access violation ends in an
         // endless exception loop while the loader lock is held. Make that memory writable, so the write is harmless.
         auto* tib = reinterpret_cast<NT_TIB*>(NtCurrentTeb());
-        auto* above = VirtualAlloc(tib->StackBase, 64 * 1024, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-        logln("guard memory above the main thread stack at " << String::toHexString((uint64)tib->StackBase) << ": "
-                                                              << (nullptr != above ? "ok" : "failed"));
+        auto* addr = tib->StackBase;
+        MEMORY_BASIC_INFORMATION mbi = {};
+        bool ok = false;
+        if (VirtualQuery(addr, &mbi, sizeof(mbi)) == sizeof(mbi)) {
+            logln("memory above the main thread stack at " << String::toHexString((uint64)addr)
+                                                           << ": state=" << String::toHexString((uint64)mbi.State)
+                                                           << " protect=" << String::toHexString((uint64)mbi.Protect)
+                                                           << " base=" << String::toHexString((uint64)mbi.AllocationBase)
+                                                           << " size=" << String::toHexString((uint64)mbi.RegionSize));
+            const SIZE_T len = 4096;
+            if (mbi.State == MEM_FREE) {
+                ok = nullptr != VirtualAlloc(addr, len, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+            } else if (mbi.State == MEM_RESERVE) {
+                ok = nullptr != VirtualAlloc(addr, len, MEM_COMMIT, PAGE_READWRITE);
+            } else if ((mbi.Protect & (PAGE_READWRITE | PAGE_EXECUTE_READWRITE)) != 0 &&
+                       (mbi.Protect & PAGE_GUARD) == 0) {
+                ok = true;  // already writable
+            } else {
+                DWORD old = 0;
+                ok = VirtualProtect(addr, len, PAGE_READWRITE, &old) != 0;
+            }
+        }
+        logln("guard memory above the main thread stack: " << (ok ? "ok" : "failed (" + String((int)GetLastError()) + ")"));
     }
 #endif
     Signals::initialize();
