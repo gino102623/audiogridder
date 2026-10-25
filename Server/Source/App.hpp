@@ -119,6 +119,7 @@ class App : public JUCEApplication, public MenuBarModel, public LogTag {
     FnThread m_splashHider;
 
     uint32 m_exitCode = 0;
+    bool m_isSandbox = false;
 
     template <typename T>
     void showEditorInternal(Thread::ThreadID tid, std::shared_ptr<Processor> proc, T func, std::function<void()> onHide,

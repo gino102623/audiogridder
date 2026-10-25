@@ -101,6 +101,7 @@ void App::initialise(const String& commandLineParameters) {
             appName = "Server";
             break;
     }
+    m_isSandbox = mode == SANDBOX_CHAIN || mode == SANDBOX_PLUGIN;
     Logger::initialize(appName, logName, cfgFile, linkLatest);
     Tracer::initialize(appName, logName, linkLatest);
     Signals::initialize();
@@ -323,6 +324,16 @@ void App::prepareShutdown(uint32 exitCode) {
 
     if (!m_preparingShutdown.exchange(true)) {
         logln("preparing shutdown");
+
+        if (m_isSandbox) {
+            // Unloading a plugin can hang (seen under Wine), which would leave an orphaned sandbox process behind
+            // holding the plugin. A sandbox has no state worth saving, so force the exit if shutting down stalls.
+            std::thread([this] {
+                std::this_thread::sleep_for(std::chrono::seconds(15));
+                logln("sandbox shutdown did not finish in time, forcing exit");
+                Process::terminate();
+            }).detach();
+        }
 
         std::thread([this] {
             Thread::setCurrentThreadName("ShutdownThread");
