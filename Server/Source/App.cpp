@@ -26,6 +26,32 @@
 
 namespace e47 {
 
+namespace {
+// Under Wine on macOS the server can't be asked to quit by the usual means, and killing it leaves its icon stuck in
+// the macOS menu bar. Creating this file in the Windows temp folder makes the server shut down cleanly instead.
+class QuitFileWatcher : public Timer {
+  public:
+    explicit QuitFileWatcher(std::function<void()> onQuit)
+        : m_file(File::getSpecialLocation(File::tempDirectory).getChildFile("audiogridder-quit")),
+          m_onQuit(std::move(onQuit)) {
+        m_file.deleteFile();
+        startTimer(500);
+    }
+
+    void timerCallback() override {
+        if (m_file.existsAsFile()) {
+            stopTimer();
+            m_file.deleteFile();
+            m_onQuit();
+        }
+    }
+
+  private:
+    File m_file;
+    std::function<void()> m_onQuit;
+};
+}  // namespace
+
 App::App() : LogTag("app") { initAsyncFunctors(); }
 App::~App() { stopAsyncFunctors(); }
 
@@ -151,6 +177,12 @@ void App::initialise(const String& commandLineParameters) {
 #ifndef JUCE_LINUX
             m_menuWindow = std::make_unique<MenuBarWindow>(this);
 #endif
+            if (isRunningUnderWine()) {
+                m_quitFileWatcher = std::make_unique<QuitFileWatcher>([this] {
+                    logln("quit file found, shutting down");
+                    prepareShutdown();
+                });
+            }
 #ifdef JUCE_MAC
             if (!askForAccessibilityPermission()) {
                 AlertWindow::showMessageBox(
@@ -350,6 +382,9 @@ void App::prepareShutdown(uint32 exitCode) {
                     hideEditor();
                     hidePluginList();
                     hideServerSettings();
+                    // Remove the tray icon first, a stalled shutdown would otherwise leave it behind
+                    m_quitFileWatcher.reset();
+                    m_menuWindow.reset();
                 });
                 m_server->shutdown();
                 m_server->waitForThreadToExit(-1);

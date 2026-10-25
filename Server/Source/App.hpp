@@ -120,6 +120,7 @@ class App : public JUCEApplication, public MenuBarModel, public LogTag {
 
     uint32 m_exitCode = 0;
     bool m_isSandbox = false;
+    std::unique_ptr<Timer> m_quitFileWatcher;
 
     template <typename T>
     void showEditorInternal(Thread::ThreadID tid, std::shared_ptr<Processor> proc, T func, std::function<void()> onHide,
