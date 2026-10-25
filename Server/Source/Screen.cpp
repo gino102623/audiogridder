@@ -54,6 +54,54 @@ std::shared_ptr<juce::Image> captureScreenNative(juce::Rectangle<int> rect) {
     return ret;
 }
 
+std::shared_ptr<juce::Image> captureWindowNative(void* nativeHandle, juce::Rectangle<int> rect) {
+    // Read the pixels from the window's own DC instead of the desktop. Under Wine on macOS the desktop DC can't be
+    // read, but a window DC is backed by the window surface that Wine renders into, even when the window is covered.
+    auto hwnd = (HWND)nativeHandle;
+    RECT wr;
+    if (nullptr == hwnd || !GetWindowRect(hwnd, &wr)) {
+        return nullptr;
+    }
+    HDC hDC = GetWindowDC(hwnd);
+    if (nullptr == hDC) {
+        return nullptr;
+    }
+    int x = rect.getX() - wr.left;
+    int y = rect.getY() - wr.top;
+    int w = rect.getWidth();
+    int h = rect.getHeight();
+    HDC cDC = CreateCompatibleDC(hDC);
+    HBITMAP bmap = CreateCompatibleBitmap(hDC, w, h);
+    HGDIOBJ oldObj = SelectObject(cDC, bmap);
+    auto ret = std::make_shared<juce::Image>(juce::Image::ARGB, w, h, false);
+
+    if (BitBlt(cDC, 0, 0, w, h, hDC, x, y, SRCCOPY)) {
+        BITMAPINFO bmi = {0};
+        bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        bmi.bmiHeader.biWidth = w;
+        bmi.bmiHeader.biHeight = -h;
+        bmi.bmiHeader.biPlanes = 1;
+        bmi.bmiHeader.biBitCount = 32;
+        bmi.bmiHeader.biCompression = BI_RGB;
+        bmi.bmiHeader.biSizeImage = 0;
+
+        juce::Image::BitmapData bd(*ret, 0, 0, w, h);
+
+        if (!GetDIBits(hDC, bmap, 0, h, bd.data, &bmi, DIB_RGB_COLORS)) {
+            ret.reset();
+        }
+    } else {
+        ret.reset();
+    }
+
+    SelectObject(cDC, oldObj);
+    DeleteObject(bmap);
+    DeleteDC(cDC);
+    ReleaseDC(hwnd, hDC);
+
+    return ret;
+}
+
 }  // namespace e47
 
 #endif

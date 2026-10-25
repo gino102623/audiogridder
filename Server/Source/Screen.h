@@ -16,6 +16,10 @@ namespace e47 {
 
 std::shared_ptr<Image> captureScreenNative(Rectangle<int> rect);
 
+#ifdef JUCE_WINDOWS
+std::shared_ptr<Image> captureWindowNative(void* nativeHandle, Rectangle<int> rect);
+#endif
+
 #ifdef JUCE_MAC
 int getCaptureDeviceIndex();
 void askForScreenRecordingPermission();

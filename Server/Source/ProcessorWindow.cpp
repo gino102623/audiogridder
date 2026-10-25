@@ -255,8 +255,18 @@ void ProcessorWindow::captureWindow() {
     }
     if (m_callbackNative) {
         m_screenCaptureRect = getScreenCaptureRect();
-        m_callbackNative(captureScreenNative(m_screenCaptureRect), m_screenCaptureRect.getWidth(),
-                         m_screenCaptureRect.getHeight());
+        std::shared_ptr<Image> img;
+#ifdef JUCE_WINDOWS
+        if (isRunningUnderWine()) {
+            if (auto* peer = getPeer()) {
+                img = captureWindowNative(peer->getNativeHandle(), m_screenCaptureRect);
+            }
+        } else
+#endif
+        {
+            img = captureScreenNative(m_screenCaptureRect);
+        }
+        m_callbackNative(img, m_screenCaptureRect.getWidth(), m_screenCaptureRect.getHeight());
     } else {
         traceln("no callback");
     }

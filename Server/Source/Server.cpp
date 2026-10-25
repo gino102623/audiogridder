@@ -134,6 +134,11 @@ void Server::loadConfig() {
     }
 
     m_screenCapturingFFmpeg = jsonGetValue(cfg, "ScreenCapturingFFmpeg", m_screenCapturingFFmpeg);
+    if (m_screenCapturingFFmpeg && isRunningUnderWine()) {
+        // ffmpeg grabs the desktop, which Wine on macOS can't read, the native mode captures the plugin window itself
+        logln("running under wine, using native screen capturing instead of ffmpeg");
+        m_screenCapturingFFmpeg = false;
+    }
     String encoder = "webp";
     m_screenCapturingFFmpegEncMode = ScreenRecorder::WEBP;
     m_screenCapturingOff = jsonGetValue(cfg, "ScreenCapturingOff", m_screenCapturingOff);
