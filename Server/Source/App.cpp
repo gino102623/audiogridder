@@ -128,8 +128,37 @@ void App::initialise(const String& commandLineParameters) {
             break;
     }
     m_isSandbox = mode == SANDBOX_CHAIN || mode == SANDBOX_PLUGIN;
+    if (m_isSandbox) {
+        // A plugin can hang while it is loaded or unloaded (seen under Wine, where a plugin's copy protection can end
+        // up in an endless exception loop while holding the loader lock). The sandbox would then never exit and keep
+        // the plugin loaded. A sandbox has no state worth saving, so force the exit if shutting down stalls. The
+        // watchdog thread is created upfront, as creating a thread needs the loader lock that might be held then.
+        std::thread([this] {
+            while (!m_preparingShutdown) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(200));
+            }
+            std::this_thread::sleep_for(std::chrono::seconds(15));
+#ifdef JUCE_WINDOWS
+            // ExitProcess would run DLL detach handlers under the loader lock, which can hang as well
+            TerminateProcess(GetCurrentProcess(), 1);
+#else
+            Process::terminate();
+#endif
+        }).detach();
+    }
     Logger::initialize(appName, logName, cfgFile, linkLatest);
     Tracer::initialize(appName, logName, linkLatest);
+#ifdef JUCE_WINDOWS
+    if (m_isSandbox && isRunningUnderWine()) {
+        // Plugins are loaded on this (the main) thread. Under Rosetta some copy protection code can't set debug
+        // registers and then writes just past the top of the stack. On Wine this access violation ends in an
+        // endless exception loop while the loader lock is held. Make that memory writable, so the write is harmless.
+        auto* tib = reinterpret_cast<NT_TIB*>(NtCurrentTeb());
+        auto* above = VirtualAlloc(tib->StackBase, 64 * 1024, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+        logln("guard memory above the main thread stack at " << String::toHexString((uint64)tib->StackBase) << ": "
+                                                              << (nullptr != above ? "ok" : "failed"));
+    }
+#endif
     Signals::initialize();
     Defaults::initServerTheme();
 
@@ -356,21 +385,6 @@ void App::prepareShutdown(uint32 exitCode) {
 
     if (!m_preparingShutdown.exchange(true)) {
         logln("preparing shutdown");
-
-        if (m_isSandbox) {
-            // Unloading a plugin can hang (seen under Wine), which would leave an orphaned sandbox process behind
-            // holding the plugin. A sandbox has no state worth saving, so force the exit if shutting down stalls.
-            std::thread([this] {
-                std::this_thread::sleep_for(std::chrono::seconds(15));
-                logln("sandbox shutdown did not finish in time, forcing exit");
-#ifdef JUCE_WINDOWS
-                // ExitProcess would run DLL detach handlers under the loader lock, which can hang as well
-                TerminateProcess(GetCurrentProcess(), 1);
-#else
-                Process::terminate();
-#endif
-            }).detach();
-        }
 
         std::thread([this] {
             Thread::setCurrentThreadName("ShutdownThread");
