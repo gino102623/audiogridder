@@ -1283,12 +1283,26 @@ void Server::runServer() {
 
                 if (m_sandboxMode == SANDBOX_CHAIN) {
                     // Spawn a sandbox child process for a new client and tell the client the port to connect to
+                    // The client ID identifies a plugin instance, so a sandbox that is still around for it belongs
+                    // to a connection the client gave up on (e.g. a plugin load that hung). Get rid of it, as it would
+                    // never exit on its own and keeps the plugin loaded. The new sandbox gets an unused ID, so that
+                    // the disconnect of a terminated sandbox can't remove it.
+                    String idPrefix = String::toHexString(cfg.clientId) + "-";
                     int num = 0;
-                    String id = String::toHexString(cfg.clientId) + "-" + String(num);
-                    while (m_sandboxes.contains(id)) {
-                        num++;
-                        id = String::toHexString(cfg.clientId) + "-" + String(num);
+                    for (int i = 0; i < 64; i++) {
+                        std::shared_ptr<SandboxMaster> stale;
+                        if (m_sandboxes.getAndRemove(idPrefix + String(i), stale)) {
+                            logln("terminating stale sandbox " << stale->id << " of reconnecting client");
+                            m_sandboxLoadedCount.remove(stale->id);
+                            stale->terminate();
+                            m_sandboxDeleter->add(std::move(stale));
+                            num = i + 1;
+                        }
                     }
+                    while (m_sandboxes.contains(idPrefix + String(num))) {
+                        num++;
+                    }
+                    String id = idPrefix + String(num);
                     auto sandbox = std::make_shared<SandboxMaster>(*this, id);
                     logln("creating sandbox " << id);
                     if (sandbox->launchWorkerProcess(
