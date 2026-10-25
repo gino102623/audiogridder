@@ -331,7 +331,12 @@ void App::prepareShutdown(uint32 exitCode) {
             std::thread([this] {
                 std::this_thread::sleep_for(std::chrono::seconds(15));
                 logln("sandbox shutdown did not finish in time, forcing exit");
+#ifdef JUCE_WINDOWS
+                // ExitProcess would run DLL detach handlers under the loader lock, which can hang as well
+                TerminateProcess(GetCurrentProcess(), 1);
+#else
                 Process::terminate();
+#endif
             }).detach();
         }
 
